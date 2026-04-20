@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReelFlow — Page Generator</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 3rem 1rem; }
+.app { background: #fff; border-radius: 12px; border: 0.5px solid #e0e0e0; padding: 2rem 2.5rem; width: 100%; max-width: 700px; }
+.logo { font-size: 13px; font-weight: 500; color: #888; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 2rem; }
+.screen { display: none; }
+.screen.active { display: block; }
+h1 { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+.sub { font-size: 14px; color: #888; margin-bottom: 1.75rem; }
+.mode-toggle { display: flex; border: 0.5px solid #d0d0d0; border-radius: 8px; overflow: hidden; margin-bottom: 1.75rem; }
+.mode-btn { flex: 1; padding: 10px 16px; font-size: 14px; background: transparent; border: none; color: #666; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.mode-btn.active { background: #f0f0ee; color: #1a1a1a; font-weight: 500; }
+.mode-btn:first-child { border-right: 0.5px solid #d0d0d0; }
+label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; margin-top: 1.25rem; font-weight: 500; }
+label:first-of-type { margin-top: 0; }
+textarea { width: 100%; font-size: 14px; padding: 10px 12px; border-radius: 8px; border: 0.5px solid #d0d0d0; font-family: inherit; line-height: 1.6; color: #1a1a1a; background: #fff; transition: border-color 0.15s; resize: vertical; }
+textarea:focus { outline: none; border-color: #999; }
+.hint { font-size: 12px; color: #aaa; margin-top: 5px; line-height: 1.5; }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 20px; font-size: 14px; font-weight: 500; border-radius: 8px; cursor: pointer; width: 100%; border: none; font-family: inherit; transition: all 0.15s; }
+.btn-primary { background: #1a1a1a; color: #fff; margin-top: 1.5rem; }
+.btn-primary:hover { background: #333; }
+.btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+.btn-secondary { background: transparent; color: #1a1a1a; border: 0.5px solid #d0d0d0; margin-top: 0; }
+.btn-secondary:hover { background: #f5f5f3; }
+.row { display: flex; gap: 10px; margin-top: 1.5rem; }
+.row .btn { margin-top: 0; }
+.ideas { margin-bottom: 0.5rem; }
+.idea-card { border: 0.5px solid #e0e0e0; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; cursor: pointer; transition: border-color 0.15s; }
+.idea-card:hover { border-color: #bbb; }
+.idea-card.selected { border: 2px solid #185FA5; background: #f8fafd; }
+.idea-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+.idea-kw { font-size: 12px; color: #185FA5; margin-bottom: 6px; font-weight: 500; }
+.idea-rationale { font-size: 13px; color: #666; line-height: 1.5; }
+.status-list { list-style: none; }
+.status-item { display: flex; align-items: center; gap: 12px; padding: 11px 0; font-size: 14px; color: #555; border-bottom: 0.5px solid #f0f0f0; }
+.status-item:last-child { border-bottom: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #e0e0e0; flex-shrink: 0; transition: background 0.3s; }
+.dot.active { background: #185FA5; }
+.dot.done { background: #1D9E75; }
+.summary-card { border: 0.5px solid #e0e0e0; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+.summary-row { display: flex; gap: 16px; padding: 8px 0; border-bottom: 0.5px solid #f0f0f0; font-size: 13px; }
+.summary-row:last-child { border-bottom: none; }
+.summary-label { color: #888; width: 110px; flex-shrink: 0; }
+.summary-value { color: #1a1a1a; flex: 1; word-break: break-word; line-height: 1.5; }
+.done-badge { display: inline-flex; align-items: center; gap: 8px; background: #E1F5EE; color: #085041; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; margin-bottom: 1.5rem; }
+.done-badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #1D9E75; display: block; }
+.error-box { background: #fff5f5; color: #a00; border: 0.5px solid #ffcccc; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-top: 1rem; line-height: 1.5; }
+a { color: #185FA5; text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="logo">ReelFlow</div>
+
+  <div id="screen-input" class="screen active">
+    <h1>New feature page</h1>
+    <p class="sub">Generate and publish a product marketing page to Webflow.</p>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btn-m-problem" onclick="setMode('problem')">Problem-led</button>
+      <button class="mode-btn" id="btn-m-feature" onclick="setMode('feature')">Feature-led</button>
+    </div>
+    <div id="mode-problem">
+      <label>Problem statement</label>
+      <textarea id="problem-input" rows="5" placeholder="Describe the problem — who it's for, what they're struggling with, and what the page should help them do."></textarea>
+    </div>
+    <div id="mode-feature" style="display:none">
+      <label>Feature context</label>
+      <textarea id="feature-input" rows="7" placeholder="Describe the feature freely — name, what it does, benefits it delivers, and the problems it solves. A few sentences or bullet points is fine."></textarea>
+      <p class="hint">e.g. "AI Video Stand-In — lets users create a digital version of themselves to generate new videos from a script without going back on camera. Solves the time and cost of repeated video production."</p>
+    </div>
+    <button class="btn btn-primary" onclick="generateIdeas()" id="btn-generate">Generate ideas →</button>
+  </div>
+
+  <div id="screen-ideas" class="screen">
+    <h1>Choose an angle</h1>
+    <p class="sub">Select the page idea you want to build.</p>
+    <div class="ideas" id="ideas-list"></div>
+    <div class="row">
+      <button class="btn btn-secondary" onclick="show('screen-input')">Back</button>
+      <button class="btn btn-primary" style="margin-top:0; flex:1;" onclick="runPipeline()" id="btn-run" disabled>Generate page →</button>
+    </div>
+  </div>
+
+  <div id="screen-running" class="screen">
+    <h1>Generating page</h1>
+    <p class="sub">Running the full pipeline — this takes about 30 seconds.</p>
+    <ul class="status-list">
+      <li class="status-item"><div class="dot active" id="d-copy"></div>Writing copy</li>
+      <li class="status-item"><div class="dot" id="d-style"></div>Style + SEO pass</li>
+      <li class="status-item"><div class="dot" id="d-blocks"></div>Selecting feature blocks</li>
+      <li class="status-item"><div class="dot" id="d-image"></div>Selecting hero image</li>
+      <li class="status-item"><div class="dot" id="d-faqs"></div>Selecting FAQs</li>
+      <li class="status-item"><div class="dot" id="d-push"></div>Pushing to Webflow</li>
+    </ul>
+    <div id="running-error" class="error-box" style="display:none"></div>
+  </div>
+
+  <div id="screen-done" class="screen">
+    <h1>Done</h1>
+    <p class="sub">Page created as a draft in Webflow.</p>
+    <div class="done-badge">Created successfully</div>
+    <div class="summary-card" id="done-summary"></div>
+    <button class="btn btn-primary" onclick="startOver()">Generate another page →</button>
+  </div>
+
+</div>
+<script>
+let mode = 'problem';
+let selectedIdea = null;
+let ideas = [];
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-m-problem').className = 'mode-btn' + (m === 'problem' ? ' active' : '');
+  document.getElementById('btn-m-feature').className = 'mode-btn' + (m === 'feature' ? ' active' : '');
+  document.getElementById('mode-problem').style.display = m === 'problem' ? 'block' : 'none';
+  document.getElementById('mode-feature').style.display = m === 'feature' ? 'block' : 'none';
+}
+
+function dot(id, state) {
+  const el = document.getElementById('d-' + id);
+  if (el) el.className = 'dot' + (state === 'done' ? ' done' : state === 'active' ? ' active' : '');
+}
+
+function getCtx() {
+  return {
+    mode,
+    content: mode === 'problem'
+      ? document.getElementById('problem-input').value.trim()
+      : document.getElementById('feature-input').value.trim()
+  };
+}
+
+async function callClaude(prompt, system, maxTokens) {
+  const res = await fetch('/.netlify/functions/generate-page', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, system, maxTokens })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(data.error));
+  return data.text;
+}
+
+async function generateIdeas() {
+  const ctx = getCtx();
+  if (!ctx.content) { alert('Please enter some context first.'); return; }
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  try {
+    const prompt = `You are generating product marketing page ideas for ReelFlow — an interactive short-form video platform for B2B websites that helps visitors stay, explore and convert through guided video journeys.
+
+Input mode: ${ctx.mode === 'problem' ? 'Problem-led\nProblem statement: ' + ctx.content : 'Feature-led\nFeature description: ' + ctx.content}
+
+Generate exactly 3 distinct webpage ideas. ${ctx.mode === 'feature' ? 'Even though the input is a product feature, each idea must be framed as a problem-based search query — what someone struggling with the problem this feature solves would type into Google. Never frame as a product announcement.' : 'Each idea represents a different search angle a prospect might use.'}
+
+Return ONLY a valid JSON array, no markdown, no explanation:
+[{"title":"...","keyword":"...","rationale":"..."},{"title":"...","keyword":"...","rationale":"..."},{"title":"...","keyword":"...","rationale":"..."}]
+
+- title: core angle for the page
+- keyword: exact natural-language search query someone would type (problem-framed)
+- rationale: one sentence why this angle works for ReelFlow`;
+
+    const raw = await callClaude(prompt, 'Return only a valid JSON array. No markdown. No code fences. No explanation.');
+    ideas = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+    const list = document.getElementById('ideas-list');
+    list.innerHTML = '';
+    ideas.forEach((idea, i) => {
+      const c = document.createElement('div');
+      c.className = 'idea-card';
+      c.innerHTML = '<div class="idea-title">' + idea.title + '</div><div class="idea-kw">' + idea.keyword + '</div><div class="idea-rationale">' + idea.rationale + '</div>';
+      c.onclick = () => {
+        selectedIdea = ideas[i];
+        document.querySelectorAll('.idea-card').forEach((x, j) => x.className = 'idea-card' + (j === i ? ' selected' : ''));
+        document.getElementById('btn-run').disabled = false;
+      };
+      list.appendChild(c);
+    });
+    show('screen-ideas');
+  } catch (e) {
+    alert('Error generating ideas: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate ideas →';
+  }
+}
+
+async function runPipeline() {
+  if (!selectedIdea) return;
+  show('screen-running');
+  document.getElementById('running-error').style.display = 'none';
+  const ctx = getCtx();
+
+  const BLOCKS = 'Universal: Free trial|69c16d02eaa5293f7dbab52a|Frame 316, Lightweight and fast|69c16d02eaa5293f7dbab536|Frame 313, Mobile ready|69c16d02eaa5293f7dbab533|Frame 304, No dev required|69c16d02eaa5293f7dbab524|Frame 312, People buy from people|69c170b9bbdaf5cd893a8454|Frame 317, Results that matter|69c16d02eaa5293f7dbab52d|image 11, Works on any website|69c16d02eaa5293f7dbab527|player\nValue Prop: Build trust before first meeting|69c16d233ea66ae12339235f|image 11, Buyers prefer video|69c16d233ea66ae123392365|player, Engage silent researchers|69c16d233ea66ae12339235c|Frame 315, Give chatbot human introduction|69c16d233ea66ae123392362|Frame 306, Human connection at scale|69c16d233ea66ae12339236e|Frame 307, Reduce sales friction|69c16d233ea66ae12339236b|Frame 310, Video creation has changed|69c170b9bbdaf5cd893a8451|Frame 305, Website as best salesperson|69c16d233ea66ae123392368|image 12, Website performance crisis|69c170b9bbdaf5cd893a8448|image 9\nOverlay: What it is|69c16d57a5d88f63342a4f43|image 12, Eye-catcher|69c16d57a5d88f63342a4f46|image 9, Activation control|69c16d57a5d88f63342a4f4f|Frame 318, Enhance chatbot|69c16d57a5d88f63342a4f4c|Frame 316\nInline: What it is|69c16d57a5d88f63342a4f52|Frame 313, Higher engagement|69c16d57a5d88f63342a4f58|Frame 304, Landing page conversion|69c16d57a5d88f63342a4f55|Frame 312, One line of code|69c16d57a5d88f63342a4f5e|Frame 317, Product pages|69c16d57a5d88f63342a4f5b|image 11\nBuild: Choose your own adventure|69c16d57a5d88f63342a4f64|Frame 315, Instant publish and update|69c16d57a5d88f63342a4f70|Frame 306, No-code canvas|69c16d57a5d88f63342a4f61|Frame 307, Pre-flight checks|69c16d57a5d88f63342a4f6a|Frame 310, Preview on live site|69c16d57a5d88f63342a4f6d|Frame 305, Scripts and captions|69c16d57a5d88f63342a4f67|image 12\nMeasure: Beyond vanity metrics|69c16da01d891da21fb9e668|Frame 307, Button engagement|69c16da01d891da21fb9e662|Frame 310, SEO benefits|69c16da01d891da21fb9e66b|Frame 305, UTM attribution|69c16da01d891da21fb9e665|image 12, What gets tracked|69c16da01d891da21fb9e65f|image 9\nAI: Flow suggestions|69c16da01d891da21fb9e66e|Frame 317, Human and AI together|69c16da01d891da21fb9e67d|image 11, Removes blank page problem|69c170b9bbdaf5cd893a845a|player, Script writing|69c16da01d891da21fb9e671|Frame 315, Stand-In speed|69c16da01d891da21fb9e677|Frame 306, Stand-In transparency|69c16da01d891da21fb9e67a|Frame 307, Video Stand-Ins what they are|69c16da01d891da21fb9e674|Frame 310\nCreate: Automatic captions|69c16da01d891da21fb9e689|Frame 310, In-house recording|69c16da01d891da21fb9e680|Frame 305, Keep videos short|69c16da01d891da21fb9e68c|image 12, Professional videographer|69c16da01d891da21fb9e683|image 9, Remote studio support|69c16da01d891da21fb9e686|Frame 318, Upload specs|69c16da01d891da21fb9e68f|Frame 316\nIntegrations: CRM attribution|69c16da01d891da21fb9e69b|player, Chatbot handoff|69c16da01d891da21fb9e698|Frame 315, GA4 and HubSpot|69c16da01d891da21fb9e695|Frame 306, Google Tag Manager|69c16da01d891da21fb9e6a1|Frame 307, Player API|69c16da01d891da21fb9e6a4|Frame 310, ReelFlow + chatbot|69c16fb2458a1b1693046d87|Frame 305, Webflow and WordPress|69c16da01d891da21fb9e69e|image 12, Works with your stack|69c16da01d891da21fb9e692|image 9\nEvents-Registrations: Build trust before ticket purchase|69c1723f480932523b994f4b|Frame 316, Improve attendee quality|69c1723f480932523b994f48|Frame 307, Improve event homepage|69c172051e3b32c012a7700a|Frame 310, Improve landing page conversion|69c172051e3b32c012a76ffe|Frame 305, Improve event sales funnel|69c1723f480932523b994f5d|image 12, Increase conversion from email|69c1723f480932523b994f60|image 9, Increase event registrations|69c172051e3b32c012a76ff5|Frame 318, Increase repeat attendees|69c1723f480932523b994f4e|Frame 316, Increase ticket sales|69c172051e3b32c012a76ffb|Frame 312, Multi-audience challenge|69c1723f480932523b994f6c|Frame 317, Personalise event experience|69c1723f480932523b994f54|image 11, Reduce event website bounce rate|69c172051e3b32c012a77007|Frame 315, Reduce no-shows|69c1723f480932523b994f51|Frame 306, Why event website not converting|69c172051e3b32c012a76ff8|Frame 307\nEvents-Organisers: 365 days of engagement|69c1723f480932523b994f69|image 9, Content marketing between events|69ce4353439bbdf18745fa4a|Frame 313, Differentiate your event|69ce4353439bbdf18745fa47|Frame 304, Prove ROI to sponsors|69ce4353439bbdf18745fa44|player\nEvents-Exhibitors: Help exhibitors attract visitors|69ce4353439bbdf18745fa4d|image 11, Help exhibitors convert visits|69ce4353439bbdf18745fa50|player, Help exhibitors justify investment|69ce437194df56f7161aa2bd|Frame 315\nEvents-Sponsors: Give sponsors a voice|69ce437194df56f7161aa2c0|Frame 312, Give sponsors measurable data|69ce437194df56f7161aa2c3|Frame 317, Increase sponsorship enquiries|69c1723f480932523b994f42|Frame 313, Increase sponsorship revenue|69c1723f480932523b994f3f|Frame 304\nEvents-Speakers: Attract better speakers|69ce437194df56f7161aa2c6|Frame 318, Help speakers promote session|69ce437194df56f7161aa2c9|Frame 306';
+
+  const IMAGES = 'Frame 304|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e38d6c7144365d683db_Frame%20304.png\nFrame 305|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e376626be2be6792e0c_Frame%20305.png\nFrame 306|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e386626be2be6792e46_Frame%20306.png\nFrame 307|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e387346f5f989fc4738_Frame%20307.png\nFrame 310|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e38e1466f143f7486d3_Frame%20310.png\nFrame 312|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e386626be2be6792e23_Frame%20312.png\nFrame 313|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e3851270fd85f8dd3e2_Frame%20313.png\nFrame 315|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e3956b2ace5ad3faea2_Frame%20315.png\nFrame 316|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e399af1591db6c2383f_Frame%20316.png\nFrame 317|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e3a96fbbb7d0e84c078_Frame%20317.png\nFrame 318|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e3967747fc51ac3868f_Frame%20318.png\nimage 9|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e39963037ed0ad6aa1b_image%209.png\nimage 11|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e397732f3660dab388f_image%2011.png\nimage 12|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e3989de423ffb903e02_image%2012.png\nplayer|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69d92e39aa13df0a9fd17248_player.png';
+
+  const FAQS = 'C1: What is ReelFlow?|69c250f5bc2907abb7e7dce3, Different from video embed?|69c250f5bc2907abb7e7dce6, Different from chatbot?|69c250f5bc2907abb7e7dce9, AI avatar tool?|69c250f5bc2907abb7e7dcec, Who buys ReelFlow?|69a143ca4bb9b98ce97893e9, Works outside B2B SaaS?|69c250f5bc2907abb7e7dcef, What problems does ReelFlow solve?|69a143ca4bb9b98ce97893e6, What results do customers see?|69a143ca4bb9b98ce97893ef, Why is interactive video essential?|69a143ca4bb9b98ce97893e3, How does ReelFlow work?|69a143ca4bb9b98ce97893ec\nC2: How do I get started?|69a143dde8e3b52abdb90447, How long to get set up?|69c250f5bc2907abb7e7dcf2, How long does installation take?|69c250f5bc2907abb7e7dcf5, Do I need a developer to install?|69c250f5bc2907abb7e7dcf8, What platforms does ReelFlow work with?|69c250f5bc2907abb7e7dcfb, Works with my CMS?|69c250f5bc2907abb7e7dcfe, Integrate with existing website?|69a143dde8e3b52abdb90441, Is there a free trial?|69c250f5bc2907abb7e7dd01\nC3: How much does ReelFlow cost?|69a143dde8e3b52abdb90444, Starter plan?|69c250f5bc2907abb7e7dd04, Grow vs Pro?|69c250f5bc2907abb7e7dd07, Enterprise pricing?|69c250f5bc2907abb7e7dd0a, Add-ons available?|69c250f5bc2907abb7e7dd0d, Multiple websites?|69c250f5bc2907abb7e7dd10, After free trial?|69c250f5bc2907abb7e7dd13\nC4: Need professional video production?|69a143dde8e3b52abdb9043e, Recommended video format?|69c250f5bc2907abb7e7dd16, How long should videos be?|69c250f5bc2907abb7e7dd19, What is AI Video Stand-In?|69c250f5bc2907abb7e7dd1c, How to create AI Stand-In?|69c250f5bc2907abb7e7dd1f, AI video content disclosed?|69c250f5bc2907abb7e7dd22, Captions generated automatically?|69c250f5bc2907abb7e7dd25, Mix human and AI video?|69c250f5bc2907abb7e7dd28\nC5: What is a Flow?|69c25142e33711894580d081, Two types of player?|69c25142e33711894580d084, Inline vs Overlay?|69c25142e33711894580d087, What can buttons trigger?|69c25142e33711894580d08a, Need developer to build Flow?|69c25142e33711894580d08d, Can I preview before publishing?|69c25142e33711894580d096, How do I publish?|69c25142e33711894580d093, Fix mistake after going live?|69c25142e33711894580d099\nC6: What metrics does ReelFlow track?|69c25142e33711894580d09c, Track in GA or HubSpot?|69c25142e33711894580d0a2, Which flow path is most popular?|69c25142e33711894580d0a8, Export performance data?|69c25142e33711894580d0ab, Does ReelFlow help with SEO?|69c25142e33711894580d0ae\nC7: Engage anonymous visitors?|69c25142e33711894580d0b1, Best page to start with?|69c25142e33711894580d0b4, Support lead generation?|69c25142e33711894580d0b7, Humanise a B2B brand?|69c25142e33711894580d0ba, Work alongside chatbot?|69c25142e33711894580d0bd, Slow down my website?|69c25142e33711894580d0c0\nC8: Integrate with CRM?|69c25142e33711894580d0c3, What is the Player API?|69c25142e33711894580d0c6, Developer needed for integrations?|69c25142e33711894580d0c9, GDPR compliant?|69c25142e33711894580d0cf\nC9: AI scripting assistance?|69c25142e33711894580d0d5, AI suggest where to use video?|69c25142e33711894580d0d8, AI write in brand voice?|69c25142e33711894580d0db\nC10: Good for event companies?|69c24e2b31c335acb6a53fe8, Increase sponsorship revenue?|69c24e2b31c335acb6a53fe2, Sell sponsorship packages?|69c24e2b31c335acb6a53ff1, Increase event ticket sales?|69c24e2b31c335acb6a53feb, Reduce event no-shows?|69c24e2b31c335acb6a53fee, Multiple audience types?|69c24e2b31c335acb6a53ff4\nC11: Visitors leaving without action?|69c2519d0e940f62c6c6aabd, Traffic but no leads?|69c2519d0e940f62c6c6aac0, Turn visitors into demo bookings?|69c2519d0e940f62c6c6aac3, Homepage bounce rate high?|69c2519d0e940f62c6c6aac6, Improve B2B website conversion?|69c2519d0e940f62c6c6aac9, Engage visitors who wont fill forms?|69c2519d0e940f62c6c6aacc, Reach anonymous buyers?|69c2519d0e940f62c6c6aacf, Influence buying decision before contact?|69c2519d0e940f62c6c6aad2, Connect with buying group?|69c2519d0e940f62c6c6aad5, Make website feel more human?|69c2519d0e940f62c6c6aad8, Build trust before sales call?|69c2519d0e940f62c6c6aadb, Show people behind business?|69c2519d0e940f62c6c6aade, Add video without big budget?|69c2519d0e940f62c6c6aae4, Keep video up to date?|69c2519d0e940f62c6c6aae7, Add video without developer?|69c2519d0e940f62c6c6aaea, Easiest way to create short videos?|69c2519d0e940f62c6c6aaed, Prove website contributing to pipeline?|69c2519d0e940f62c6c6aaf0, Measure engagement beyond page views?|69c2519d0e940f62c6c6aaf3, Track content influencing buyer decisions?|69c2519d0e940f62c6c6aaf6, Prospects better informed before sales calls?|69c2519d0e940f62c6c6aafc';
+
+  const pipelinePrompt = 'You are generating a complete product marketing page for ReelFlow — an interactive short-form video platform for B2B websites.\n\nInput mode: ' + (ctx.mode === 'problem' ? 'Problem-led\nProblem statement: ' + ctx.content : 'Feature-led\nFeature description: ' + ctx.content) + '\n\nChosen angle — Title: ' + selectedIdea.title + ' | Keyword: ' + selectedIdea.keyword + ' | Rationale: ' + selectedIdea.rationale + '\n\nExecute all steps silently and return ONLY the final JSON object. No explanations. No markdown. No code fences.\n\nSTEP 1 — Write copy:\nhero_header: Solution-framed H1 containing the keyword. Rephrase as solution — NOT a verbatim repeat of the query.\nhero_subheader: 1-2 sentences. Acknowledge the problem first, then introduce interactive video as the mechanism that solves it.\nintro_label_text: 2-4 words e.g. "The problem"\nintro_title: H2 expanding the buyer problem. Must differ from hero.\nintro_subtitle: 2-3 sentences. Position ReelFlow as practical answer. No jargon.\nsteps_title: Fresh title for the 4-step ReelFlow process relevant to this page.\ncta_title: Short, punchy, action-oriented.\ncta_subtitle: 1-2 sentences, benefit-led, ends with reassurance e.g. "no rebuild required"\ncta_primary_button_text: e.g. "Start for free"\nsection_faqs_title: Short question-led heading\nname: Raw Google search string. Natural, lowercase.\nslug: lowercase, hyphen-separated, includes keyword\nseo_title: Keyword at start, under 60 chars, ends with | ReelFlow\nseo_meta_description: 120-155 chars, keyword once, no jargon\n\nSTEP 2 — Style pass (silent): Warm but measured, no enthusiasm, no jargon. Value first benefit second. En dashes with spaces. No banned words: revolutionary, game-changing, seamless, leverage, utilize, robust, scalable, cutting-edge, innovative, streamline.\n\nSTEP 3 — SEO pass (silent): Keyword in hero_header, hero_subheader, intro_title, intro_subtitle naturally.\n\nSTEP 4 — Select 3 feature blocks (4 if broad topic):\nRules: max 1 per cluster, min 2 clusters, always 1 Universal block, all different Image# values.\nBlocks (Name|ID|Image#): ' + BLOCKS + '\n\nSTEP 5 — Select hero image:\nHero Image# must NOT match any Image# used by the selected feature blocks. Use exact CDN URL.\nImages (Image#|URL): ' + IMAGES + '\n\nSTEP 6 — Select 3-5 FAQs:\nRules: prioritise C11, include at least 1 from C1-C9, max 2 per cluster.\nFAQs (Name|ID): ' + FAQS + '\n\nSTEP 7 — Return this exact JSON with all values. Replace {slug} in both CTA links with the actual slug:\n{"name":"","slug":"","hero_layout":"Left text, right media","hero_header":"","hero_subheader":"","header_media_type":"Image","hero_image_url":"","primary_cta_text":"","primary_cta_link":"https://app.reelflow.com/signup?utm_source=features&utm_medium={slug}","secondary_cta_text":"","secondary_cta_link":"","intro_label_text":"","intro_title":"","intro_subtitle":"","feature_blocks":[],"steps_title":"","steps_items":["69bcfa9ca1b5919c57f1937f","69bcfb02526dd4b174a57952","69bcfb1ca72becc4bf10b13b","69bcfb766afd599d603ebdc7"],"section_faqs_title":"","faqs":[],"cta_title":"","cta_subtitle":"","cta_primary_button_text":"","cta_primary_button_link":"https://www.reelflow.com/product?utm_source=features&utm_medium={slug}","cta_secondary_button_text":"","cta_secondary_button_link":"","seo_title":"","seo_meta_description":""}';
+
+  const steps = ['copy', 'style', 'blocks', 'image', 'faqs', 'push'];
+
+  async function animateSteps(totalMs) {
+    const delays = [totalMs * 0.2, totalMs * 0.15, totalMs * 0.15, totalMs * 0.1, totalMs * 0.1];
+    for (let i = 0; i < delays.length; i++) {
+      await new Promise(r => setTimeout(r, delays[i]));
+      dot(steps[i], 'done');
+      if (steps[i + 1]) dot(steps[i + 1], 'active');
+    }
+  }
+
+  try {
+    dot('copy', 'active');
+
+    const [raw] = await Promise.all([
+      callClaude(pipelinePrompt, 'Return only a single valid JSON object. No markdown. No code fences. No explanation.', 4000),
+      animateSteps(25000)
+    ]);
+
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    const slug = parsed.slug || '';
+    parsed.primary_cta_link = (parsed.primary_cta_link || '').replace('{slug}', slug);
+    parsed.cta_primary_button_link = (parsed.cta_primary_button_link || '').replace('{slug}', slug);
+
+    dot('push', 'active');
+
+    const fieldData = {
+      name: parsed.name, slug: parsed.slug,
+      'hero-layout': parsed.hero_layout, 'hero-header': parsed.hero_header,
+      'hero-subheader': parsed.hero_subheader, 'header-media-type': parsed.header_media_type,
+      'primary-cta-text': parsed.primary_cta_text, 'primary-cta-link': parsed.primary_cta_link,
+      'secondary-cta-text': parsed.secondary_cta_text || '', 'secondary-cta-link': parsed.secondary_cta_link || '',
+      'intro-label-text': parsed.intro_label_text, 'intro-title': parsed.intro_title,
+      'intro-subtitle': parsed.intro_subtitle, 'feature-blocks': parsed.feature_blocks,
+      'steps-title': parsed.steps_title, 'steps-items': parsed.steps_items,
+      'section-faqs-title': parsed.section_faqs_title, 'faqs': parsed.faqs,
+      'cta-title': parsed.cta_title, 'cta-subtitle': parsed.cta_subtitle,
+      'cta-primary-button-text': parsed.cta_primary_button_text, 'cta-primary-button-link': parsed.cta_primary_button_link,
+      'cta-secondary-button-text': parsed.cta_secondary_button_text || '', 'cta-secondary-button-link': parsed.cta_secondary_button_link || '',
+      'seo-title': parsed.seo_title, 'seo-meta-description': parsed.seo_meta_description
+    };
+
+    if (parsed.hero_image_url) fieldData['hero-image'] = { url: parsed.hero_image_url };
+
+    const pushRes = await fetch('/.netlify/functions/push-to-webflow', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fieldData })
+    });
+
+    const pushData = await pushRes.json();
+    if (!pushRes.ok) throw new Error(JSON.stringify(pushData.error));
+
+    dot('push', 'done');
+
+    const heroImg = parsed.hero_image_url ? parsed.hero_image_url.split('/').pop().replace(/%20/g, ' ') : 'not set';
+
+    document.getElementById('done-summary').innerHTML = [
+      ['Page', parsed.name], ['Slug', '/features/' + parsed.slug],
+      ['Hero', parsed.hero_header], ['Hero image', heroImg],
+      ['Feature blocks', Array.isArray(parsed.feature_blocks) ? parsed.feature_blocks.length + ' selected' : '—'],
+      ['FAQs', Array.isArray(parsed.faqs) ? parsed.faqs.length + ' selected' : '—'],
+      ['SEO title', parsed.seo_title],
+      ['Live URL', '<a href="https://www.reelflow.com/features/' + parsed.slug + '" target="_blank">reelflow.com/features/' + parsed.slug + '</a>']
+    ].map(function(r) { return '<div class="summary-row"><span class="summary-label">' + r[0] + '</span><span class="summary-value">' + r[1] + '</span></div>'; }).join('');
+
+    show('screen-done');
+
+  } catch (e) {
+    dot('push', '');
+    const errBox = document.getElementById('running-error');
+    errBox.style.display = 'block';
+    errBox.textContent = 'Error: ' + e.message;
+  }
+}
+
+function startOver() {
+  selectedIdea = null; ideas = [];
+  document.getElementById('problem-input').value = '';
+  document.getElementById('feature-input').value = '';
+  document.getElementById('btn-run').disabled = true;
+  ['copy', 'style', 'blocks', 'image', 'faqs', 'push'].forEach(function(id) { dot(id, ''); });
+  setMode('problem');
+  show('screen-input');
+}
+</script>
+</body>
+</html>
