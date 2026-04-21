@@ -20,10 +20,25 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: "Invalid JSON body" }) };
   }
 
-  const { fieldData } = payload;
+  let { fieldData } = payload;
   if (!fieldData) {
     return { statusCode: 400, body: JSON.stringify({ error: "Missing fieldData" }) };
   }
+
+  // Sanitise reference fields — Webflow expects plain ID strings, not objects
+  // Claude sometimes returns {id: '...', image: '...'} instead of just '...'
+  const sanitiseRefs = (arr) => {
+    if (!Array.isArray(arr)) return arr;
+    return arr.map(item => {
+      if (typeof item === 'string') return item;
+      if (typeof item === 'object' && item !== null && item.id) return item.id;
+      return item;
+    });
+  };
+
+  if (fieldData['feature-blocks']) fieldData['feature-blocks'] = sanitiseRefs(fieldData['feature-blocks']);
+  if (fieldData['faqs']) fieldData['faqs'] = sanitiseRefs(fieldData['faqs']);
+  if (fieldData['steps-items']) fieldData['steps-items'] = sanitiseRefs(fieldData['steps-items']);
 
   try {
     const response = await fetch(
