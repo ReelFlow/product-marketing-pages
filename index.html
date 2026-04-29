@@ -91,13 +91,11 @@ a:hover { text-decoration: underline; }
 
   <div id="screen-running" class="screen">
     <h1>Generating page</h1>
-    <p class="sub">Running the full pipeline — this takes about 30 seconds.</p>
+    <p class="sub">Running the full pipeline — this takes about 45 seconds.</p>
     <ul class="status-list">
-      <li class="status-item"><div class="dot active" id="d-copy"></div>Writing copy</li>
-      <li class="status-item"><div class="dot" id="d-style"></div>Style + SEO pass</li>
-      <li class="status-item"><div class="dot" id="d-blocks"></div>Selecting feature blocks</li>
-      <li class="status-item"><div class="dot" id="d-image"></div>Selecting hero image</li>
-      <li class="status-item"><div class="dot" id="d-faqs"></div>Selecting FAQs</li>
+      <li class="status-item"><div class="dot" id="d-context"></div>Loading context</li>
+      <li class="status-item"><div class="dot" id="d-copy"></div>Writing copy with Style + SEO context</li>
+      <li class="status-item"><div class="dot" id="d-assets"></div>Selecting feature blocks, hero image, and FAQs</li>
       <li class="status-item"><div class="dot" id="d-push"></div>Pushing to Webflow</li>
     </ul>
     <div id="running-error" class="error-box" style="display:none"></div>
@@ -113,10 +111,16 @@ a:hover { text-decoration: underline; }
 
 </div>
 <script>
+// ============================================================
+// STATE
+// ============================================================
 let mode = 'problem';
 let selectedIdea = null;
 let ideas = [];
 
+// ============================================================
+// UI HELPERS
+// ============================================================
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
@@ -144,6 +148,9 @@ function getCtx() {
   };
 }
 
+// ============================================================
+// CLAUDE API (via Netlify function)
+// ============================================================
 async function callClaude(prompt, system, maxTokens) {
   const res = await fetch('/.netlify/functions/generate-page', {
     method: 'POST',
@@ -155,6 +162,37 @@ async function callClaude(prompt, system, maxTokens) {
   return data.text;
 }
 
+// ============================================================
+// LOAD DATA FILES
+// ============================================================
+async function loadDataFile(name) {
+  const res = await fetch('/data/' + name);
+  if (!res.ok) throw new Error('Failed to load /data/' + name);
+  return await res.text();
+}
+
+async function loadAllData() {
+  const [
+    reelflowContext,
+    styleGuide,
+    seoGuide,
+    featureBlockIndex,
+    faqLibraryIndex,
+    imageLibrary
+  ] = await Promise.all([
+    loadDataFile('reelflow-context.md'),
+    loadDataFile('writing-style-guide.md'),
+    loadDataFile('seo-guide.md'),
+    loadDataFile('feature-block-index.md'),
+    loadDataFile('faq-library-index.md'),
+    loadDataFile('image-library.md')
+  ]);
+  return { reelflowContext, styleGuide, seoGuide, featureBlockIndex, faqLibraryIndex, imageLibrary };
+}
+
+// ============================================================
+// IDEA GENERATION (call 0)
+// ============================================================
 async function generateIdeas() {
   const ctx = getCtx();
   if (!ctx.content) { alert('Please enter some context first.'); return; }
@@ -162,7 +200,16 @@ async function generateIdeas() {
   btn.disabled = true;
   btn.textContent = 'Generating...';
   try {
-    const prompt = `You are generating product marketing page ideas for ReelFlow — an interactive short-form video platform for B2B websites that helps visitors stay, explore and convert through guided video journeys.
+    // Lightweight idea generation — only loads the context DB
+    const reelflowContext = await loadDataFile('reelflow-context.md');
+
+    const prompt = `You are generating product marketing page ideas for ReelFlow.
+
+You have full ReelFlow product and audience context below. Use it to generate ideas that are tightly grounded in real ReelFlow positioning, not generic B2B language.
+
+================ REELFLOW CONTEXT ================
+${reelflowContext}
+================ END REELFLOW CONTEXT ================
 
 Input mode: ${ctx.mode === 'problem' ? 'Problem-led\nProblem statement: ' + ctx.content : 'Feature-led\nFeature description: ' + ctx.content}
 
@@ -178,7 +225,7 @@ Return ONLY a valid JSON array, no markdown, no explanation:
 - heroHeader: provisional H1 for the page — solution-framed, contains keyword, reads as a product page not a blog post
 - rationale: one sentence why this angle works for ReelFlow`;
 
-    const raw = await callClaude(prompt, 'Return only a valid JSON array. No markdown. No code fences. No explanation.');
+    const raw = await callClaude(prompt, 'Return only a valid JSON array. No markdown. No code fences. No explanation.', 1500);
     ideas = JSON.parse(raw.replace(/```json|```/g, '').trim());
 
     const list = document.getElementById('ideas-list');
@@ -203,66 +250,229 @@ Return ONLY a valid JSON array, no markdown, no explanation:
   }
 }
 
+// ============================================================
+// COPY WRITING (call 1)
+// ============================================================
+async function generateCopy(data, ctx) {
+  const prompt = `You are generating product marketing page copy for ReelFlow.
+
+You have three full context documents below: the ReelFlow product and audience context, the Writing Style Guide, and the SEO Guide. Apply ALL of them rigorously. Style and SEO must both shape every field.
+
+================ REELFLOW CONTEXT ================
+${data.reelflowContext}
+================ END REELFLOW CONTEXT ================
+
+================ WRITING STYLE GUIDE ================
+${data.styleGuide}
+================ END WRITING STYLE GUIDE ================
+
+================ SEO GUIDE ================
+${data.seoGuide}
+================ END SEO GUIDE ================
+
+Input mode: ${ctx.mode === 'problem' ? 'Problem-led\nProblem statement: ' + ctx.content : 'Feature-led\nFeature description: ' + ctx.content}
+
+Chosen angle:
+- Title: ${selectedIdea.title}
+- Keyword: ${selectedIdea.keyword}
+- Provisional hero header: ${selectedIdea.heroHeader}
+- Rationale: ${selectedIdea.rationale}
+
+Write all copy fields for this page in one go. Apply the Writing Style Guide and SEO Guide simultaneously. Use the Style Guide's banned words list, en dashes (not em dashes), VBF framework, and tone principles. Use the SEO Guide for hero structure, intro differentiation, and metadata rules.
+
+Field rules:
+- hero_header: Solution-framed H1 containing the keyword. Use the provisional hero header as a starting point and refine it. NOT a verbatim repeat of the search query.
+- hero_subheader: 1-2 sentences. Acknowledge the problem first, then introduce ReelFlow's interactive video as the mechanism that solves it. Must name the mechanism.
+- intro_label_text: 2-4 words e.g. "The problem"
+- intro_title: H2 expanding the buyer problem. Must differ from hero in wording and angle.
+- intro_subtitle: 2-3 sentences. Position ReelFlow as the practical answer. Deepens intent without repeating the hero.
+- steps_title: Fresh title for the 4-step ReelFlow process — must connect the standard process to this page's specific problem.
+- cta_title: Short, punchy, action-oriented.
+- cta_subtitle: 1-2 sentences, benefit-led, ends with reassurance e.g. "no rebuild required".
+- cta_primary_button_text: e.g. "Start for free".
+- section_faqs_title: Short, question-led heading relevant to the page topic.
+- name: Raw Google search string a visitor would type. Natural, lowercase, query-like.
+- slug: lowercase, hyphen-separated, includes keyword.
+- seo_title: Keyword at start, under 60 chars, ends with " | ReelFlow".
+- seo_meta_description: 120-155 chars, keyword once, no jargon.
+- primary_keyword: the exact keyword for this page (used downstream for asset selection).
+
+Return ONLY a single valid JSON object with these exact keys, no markdown, no explanation:
+{"name":"","slug":"","hero_header":"","hero_subheader":"","intro_label_text":"","intro_title":"","intro_subtitle":"","steps_title":"","cta_title":"","cta_subtitle":"","cta_primary_button_text":"","section_faqs_title":"","seo_title":"","seo_meta_description":"","primary_keyword":""}`;
+
+  const raw = await callClaude(prompt, 'Return only a single valid JSON object. No markdown. No code fences. No explanation.', 2500);
+  return JSON.parse(raw.replace(/```json|```/g, '').trim());
+}
+
+// ============================================================
+// ASSET SELECTION (call 2) — feature blocks, hero image, FAQs
+// ============================================================
+async function selectAssets(data, copy, ctx) {
+  const prompt = `You are selecting the assets — feature blocks, hero image, and FAQs — for a ReelFlow product marketing page.
+
+You have three full context documents below: the Feature Block Index (with Best for column), the FAQ Library Index, and the Image Library. Use the Best for column on each feature block as the PRIMARY selection criterion.
+
+================ FEATURE BLOCK INDEX ================
+${data.featureBlockIndex}
+================ END FEATURE BLOCK INDEX ================
+
+================ FAQ LIBRARY INDEX ================
+${data.faqLibraryIndex}
+================ END FAQ LIBRARY INDEX ================
+
+================ IMAGE LIBRARY ================
+${data.imageLibrary}
+================ END IMAGE LIBRARY ================
+
+Page topic and copy context:
+- Page name (search query): ${copy.name}
+- Primary keyword: ${copy.primary_keyword}
+- Hero header: ${copy.hero_header}
+- Hero subheader: ${copy.hero_subheader}
+- Intro title: ${copy.intro_title}
+- Intro subtitle: ${copy.intro_subtitle}
+- Input mode: ${ctx.mode}
+- Original input: ${ctx.content}
+
+================ FEATURE BLOCK SELECTION ================
+Select exactly 3 feature blocks (4 if topic is genuinely broad).
+
+Rules:
+- Maximum 1 block per cluster
+- Must span at least 2 different clusters
+- Universal Value blocks are eligible like any other cluster — include one ONLY when a Universal block is genuinely the best fit for the page topic, not by default. If no Universal block adds real value, fill the third slot from another relevant cluster.
+- Each selection must be justified by citing the block's "Best for" line — selection must be based on the documented fit, not vibes
+- All selected blocks must have different Image # values
+
+================ HERO IMAGE SELECTION ================
+Select one hero image from the Image Library.
+
+Rules:
+- The chosen Image # MUST NOT match any Image # used by the selected feature blocks
+- Among remaining Image #s, pick whichever feels most appropriate for the page topic
+- Use the EXACT CDN URL from the Image Library — do not construct or guess
+
+================ FAQ SELECTION ================
+Select 3 to 5 FAQs.
+
+Rules:
+- Match FAQs to the visitor's likely follow-up questions based on the page topic
+- Prioritise C11: Problems cluster FAQs where they align with search intent
+- Include at least 1 FAQ from a product-focused cluster (C1 – C9) for balance
+- Maximum 2 FAQs from any single cluster
+- Use the Webflow Item ID directly — never use slugs
+
+================ OUTPUT FORMAT ================
+Return ONLY a single valid JSON object with these exact keys, no markdown, no explanation:
+
+{
+  "feature_blocks": ["webflow_id_1", "webflow_id_2", "webflow_id_3"],
+  "hero_image_url": "https://cdn.prod.website-files.com/.../image.png",
+  "faqs": ["webflow_faq_id_1", "webflow_faq_id_2", "webflow_faq_id_3"],
+  "selection_rationale": {
+    "feature_blocks": [
+      {"name": "Block name", "best_for": "the Best for line", "why": "one sentence on why it lands for this page"},
+      {"name": "Block name", "best_for": "the Best for line", "why": "one sentence on why it lands for this page"},
+      {"name": "Block name", "best_for": "the Best for line", "why": "one sentence on why it lands for this page"}
+    ],
+    "hero_image": "Image # selected and why",
+    "faqs": ["one sentence why each FAQ fits"]
+  }
+}
+
+feature_blocks must be an array of plain Webflow ID strings only. faqs must be an array of plain Webflow ID strings only. No objects, no extra properties in those arrays.`;
+
+  const raw = await callClaude(prompt, 'Return only a single valid JSON object. No markdown. No code fences. No explanation.', 2500);
+  return JSON.parse(raw.replace(/```json|```/g, '').trim());
+}
+
+// ============================================================
+// PIPELINE — orchestrates the calls in sequence
+// ============================================================
 async function runPipeline() {
   if (!selectedIdea) return;
   show('screen-running');
   document.getElementById('running-error').style.display = 'none';
   const ctx = getCtx();
 
-  const BLOCKS = 'Universal: Try ReelFlow free for 14 days. No credit card required.|69c16d02eaa5293f7dbab52a|1920x1080, Zero impact of site loading time.|69c16d02eaa5293f7dbab536|1920x1080-1, Built for how your buyers browse - including mobile.|69c16d02eaa5293f7dbab533|1920x1080-2, Drop it on any page. No dev required.|69c16d02eaa5293f7dbab524|1920x1080-3, People buy from people - not pages.|69c170b9bbdaf5cd893a8454|1920x1080-4, More engagement. More conversion.|69c16d02eaa5293f7dbab52d|1920x1080-5, Works with your existing website - whatever it\'s built on.|69c16d02eaa5293f7dbab527|1920x1080-6\nValue Prop: Build trust long before the first sales meeting.|69c16d233ea66ae12339235f|1920x1080-7, Your buyers prefer to watch, not read.|69c16d233ea66ae123392365|1920x1080-8, Reach the buyers who\'ll never fill in a form.|69c16d233ea66ae12339235c|1920x1080-9, Give your chatbot a human introduction.|69c16d233ea66ae123392362|1920x1080-10, Human connection - without the headcount.|69c16d233ea66ae12339236e|1920x1080-11, Prospects arrive better educated. Sales cycles get shorter.|69c16d233ea66ae12339236b|1920x1080-12, Video used to cost thousands and take weeks. Not any more.|69c170b9bbdaf5cd893a8451|1920x1080-13, Your website should be your best salesperson.|69c16d233ea66ae123392368|1920x1080-14, Fix declining website performance.|69c170b9bbdaf5cd893a8448|1920x1080\nOverlay: Greet every visitor with a human presence.|69c16d57a5d88f63342a4f43|1920x1080-1, Always-on human introduction.|69c16d57a5d88f63342a4f46|1920x1080-4, You control when and how it appears.|69c16d57a5d88f63342a4f4f|1920x1080-7, Give your chatbot a human introduction.|69c16d57a5d88f63342a4f4c|1920x1080-10\nInline: Embed video directly inside your page content.|69c16d57a5d88f63342a4f52|1920x1080-2, Interactive video gets explored. Passive video gets ignored.|69c16d57a5d88f63342a4f58|1920x1080-5, Transform landing pages into guided conversations.|69c16d57a5d88f63342a4f55|1920x1080-8, Placed with a single line of code. Updated from your dashboard.|69c16d57a5d88f63342a4f5e|1920x1080-11, Let your product speak for itself - in your team\'s voice.|69c16d57a5d88f63342a4f5b|1920x1080-14\nBuild: Let visitors choose their own path.|69c16d57a5d88f63342a4f64|1920x1080-3, Publish in one click. Update any time.|69c16d57a5d88f63342a4f70|1920x1080-6, Build interactive video journeys on a visual canvas.|69c16d57a5d88f63342a4f61|1920x1080-9, Pre-flight checks mean nothing goes live with errors.|69c16d57a5d88f63342a4f6a|1920x1080-12, Preview on your website before going live.|69c16d57a5d88f63342a4f6d|1920x1080-1, Plan, script, and caption - all in one place.|69c16d57a5d88f63342a4f67|1920x1080-13\nMeasure: Move beyond views. Measure real buyer intent.|69c16da01d891da21fb9e668|1920x1080-4, Know which choices your buyers are actually making.|69c16da01d891da21fb9e662|1920x1080-7, Interactive video improves your search performance.|69c16da01d891da21fb9e66b|1920x1080-10, Connect ReelFlow to your CRM and analytics stack.|69c16da01d891da21fb9e665|1920x1080-13, See exactly how buyers move through your content.|69c16da01d891da21fb9e65f|1920x1080-2\nAI: AI maps your website and suggests the best video journeys.|69c16da01d891da21fb9e66e|1920x1080-5, Mix human-recorded and AI-generated video in the same Flow.|69c16da01d891da21fb9e67d|1920x1080-8, Not sure what to say or where to start? AI handles that.|69c170b9bbdaf5cd893a845a|1920x1080-11, Stop staring at a blank page. AI drafts your scripts.|69c16da01d891da21fb9e671|1920x1080-14, New video content in minutes. Not filming days.|69c16da01d891da21fb9e677|1920x1080-3, Transparent by design. Visitors always know.|69c16da01d891da21fb9e67a|1920x1080-6, Generate video content without getting in front of a camera.|69c16da01d891da21fb9e674|1920x1080-9\nCreate: Captions generated automatically. Accuracy guaranteed by you.|69c16da01d891da21fb9e689|1920x1080-12, Record it yourself. Upload and go.|69c16da01d891da21fb9e680|1920x1080-1, Short-form, interactive video captures and maintains attention.|69c16da01d891da21fb9e68c|1920x1080-4, Need a polished look? We connect you with professional videographers.|69c16da01d891da21fb9e683|1920x1080-7, Remote studio support.|69c16da01d891da21fb9e686|1920x1080-10, Simple upload requirements. Flexible for any setup.|69c16da01d891da21fb9e68f|1920x1080-13\nIntegrations: Every lead carries ReelFlow attribution into your CRM.|69c16da01d891da21fb9e69b|1920x1080-2, Use ReelFlow to warm up visitors, then hand off to your chatbot.|69c16da01d891da21fb9e698|1920x1080-5, Track Flow engagement in GA4, HubSpot, and beyond.|69c16da01d891da21fb9e695|1920x1080-8, Install once via Google Tag Manager. No developer required.|69c16da01d891da21fb9e6a1|1920x1080-11, ReelFlow API for advanced set-ups.|69c16da01d891da21fb9e6a4|1920x1080-14, Video intro, then chatbot.|69c16fb2458a1b1693046d87|1920x1080-3, Native support for Webflow, WordPress, HubSpot, and more.|69c16da01d891da21fb9e69e|1920x1080-6, ReelFlow works alongside your existing tools.|69c16da01d891da21fb9e692|1920x1080-9\nEvents-Registrations: Let delegates hear it from the people who made it - before they register.|69c1723f480932523b994f4b|1920x1080-12, Attract the delegates your sponsors actually want in the room.|69c1723f480932523b994f48|1920x1080, One homepage. Attendees, sponsors, and exhibitors all feel spoken to.|69c172051e3b32c012a7700a|1920x1080-3, The best event landing pages don\'t just describe. They persuade.|69c172051e3b32c012a76ffe|1920x1080-6, Add a human layer between awareness and registration - and watch your funnel improve.|69c1723f480932523b994f5d|1920x1080-9, Your email list already knows you. Your landing page should feel that way too.|69c1723f480932523b994f60|1920x1080-12, Turn more visitors into registrants.|69c172051e3b32c012a76ff5|1920x1080-1, Re-energise past delegates before they start comparing next year\'s options.|69c1723f480932523b994f4e|1920x1080-4, Build trust to increase registrations.|69c172051e3b32c012a76ffb|1920x1080-7, Attendees, sponsors, exhibitors, speakers - each one deserves their own conversation.|69c1723f480932523b994f6c|1920x1080-10, Every visitor has a different question. Let them find their own answer.|69c1723f480932523b994f54|1920x1080-13, Put a human face on your event site.|69c172051e3b32c012a77007|1920x1080-2, Keep registered delegates connected to your event between sign-up and the day itself.|69c1723f480932523b994f51|1920x1080-5, Great events deserve websites that are just as compelling.|69c172051e3b32c012a76ff8|1920x1080-8\nEvents-Organisers: Sponsor and delegate relationships should run all year.|69c1723f480932523b994f69|1920x1080-11, Keep your audience engaged between editions - not just in the run-up.|69ce4353439bbdf18745fa4a|1920x1080-14, In a crowded events market, personality is your competitive advantage.|69ce4353439bbdf18745fa47|1920x1080, Give sponsors and exhibitors the proof they need to renew.|69ce4353439bbdf18745fa44|1920x1080-3\nEvents-Exhibitors: Give exhibitors a reason for delegates to seek them out before they arrive.|69ce4353439bbdf18745fa4d|1920x1080-6, The conversation at the stand shouldn\'t be the first one delegates have with an exhibitor.|69ce4353439bbdf18745fa50|1920x1080-9, Help your exhibitors prove ROI - and they\'ll come back next year.|69ce437194df56f7161aa2bd|1920x1080-12\nEvents-Sponsors: A logo on a banner isn\'t sponsorship anymore. Give sponsors a voice.|69ce437194df56f7161aa2c0|1920x1080-1, Turn sponsor visibility into something their marketing team can actually report on.|69ce437194df56f7161aa2c3|1920x1080-4, Turn your sponsorship page into a pipeline - not a PDF download.|69c1723f480932523b994f42|1920x1080-7, Make your sponsorship proposition as compelling online as it is in the room.|69c1723f480932523b994f3f|1920x1080-10\nEvents-Speakers: Show prospective speakers the stage, the audience, and the opportunity - before they say yes.|69ce437194df56f7161aa2c6|1920x1080-13, Turn your speakers into your most effective marketing channel.|69ce437194df56f7161aa2c9|1920x1080-2';
-
-  const IMAGES = '1920x1080|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a3e1df64fe69fa6ca8_1920x1080.png\n1920x1080-1|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a141b5eae7f85fcbe1_1920x1080-1.png\n1920x1080-2|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a28528f12916cdb388_1920x1080-2.png\n1920x1080-3|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a28aab61abff75dcd0_1920x1080-3.png\n1920x1080-4|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a2199593d838e08f79_1920x1080-4.png\n1920x1080-5|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a36a639918cfb9e73b_1920x1080-5.png\n1920x1080-6|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a2d24d003e19b65539_1920x1080-6.png\n1920x1080-7|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a23e2aacdfef87bf64_1920x1080-7.png\n1920x1080-8|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a28cdb6594e3e50bf6_1920x1080-8.png\n1920x1080-9|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a3a4dc1e5eaee458d7_1920x1080-9.png\n1920x1080-10|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a335c5df8cd887bf23_1920x1080-10.png\n1920x1080-11|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a38d944b4a36ea566e_1920x1080-11.png\n1920x1080-12|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a3d4f09907cd66cf75_1920x1080-12.png\n1920x1080-13|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a3aa990eecb2cc2d0d_1920x1080-13.png\n1920x1080-14|https://cdn.prod.website-files.com/668e40490f9cf52facb6a3fc/69e759a343c05ce33b9f003d_1920x1080-14.png';
-
-  const FAQS = 'C1: What is ReelFlow?|69c250f5bc2907abb7e7dce3, Different from video embed?|69c250f5bc2907abb7e7dce6, Different from chatbot?|69c250f5bc2907abb7e7dce9, AI avatar tool?|69c250f5bc2907abb7e7dcec, Who buys ReelFlow?|69a143ca4bb9b98ce97893e9, Works outside B2B SaaS?|69c250f5bc2907abb7e7dcef, What problems does ReelFlow solve?|69a143ca4bb9b98ce97893e6, What results do customers see?|69a143ca4bb9b98ce97893ef, Why is interactive video essential?|69a143ca4bb9b98ce97893e3, How does ReelFlow work?|69a143ca4bb9b98ce97893ec\nC2: How do I get started?|69a143dde8e3b52abdb90447, How long to get set up?|69c250f5bc2907abb7e7dcf2, How long does installation take?|69c250f5bc2907abb7e7dcf5, Do I need a developer to install?|69c250f5bc2907abb7e7dcf8, What platforms does ReelFlow work with?|69c250f5bc2907abb7e7dcfb, Works with my CMS?|69c250f5bc2907abb7e7dcfe, Integrate with existing website?|69a143dde8e3b52abdb90441, Is there a free trial?|69c250f5bc2907abb7e7dd01\nC3: How much does ReelFlow cost?|69a143dde8e3b52abdb90444, Starter plan?|69c250f5bc2907abb7e7dd04, Grow vs Pro?|69c250f5bc2907abb7e7dd07, Enterprise pricing?|69c250f5bc2907abb7e7dd0a, Add-ons available?|69c250f5bc2907abb7e7dd0d, Multiple websites?|69c250f5bc2907abb7e7dd10, After free trial?|69c250f5bc2907abb7e7dd13\nC4: Need professional video production?|69a143dde8e3b52abdb9043e, Recommended video format?|69c250f5bc2907abb7e7dd16, How long should videos be?|69c250f5bc2907abb7e7dd19, What is AI Video Stand-In?|69c250f5bc2907abb7e7dd1c, How to create AI Stand-In?|69c250f5bc2907abb7e7dd1f, AI video content disclosed?|69c250f5bc2907abb7e7dd22, Captions generated automatically?|69c250f5bc2907abb7e7dd25, Mix human and AI video?|69c250f5bc2907abb7e7dd28\nC5: What is a Flow?|69c25142e33711894580d081, Two types of player?|69c25142e33711894580d084, Inline vs Overlay?|69c25142e33711894580d087, What can buttons trigger?|69c25142e33711894580d08a, Need developer to build Flow?|69c25142e33711894580d08d, Can I preview before publishing?|69c25142e33711894580d096, How do I publish?|69c25142e33711894580d093, Fix mistake after going live?|69c25142e33711894580d099\nC6: What metrics does ReelFlow track?|69c25142e33711894580d09c, Track in GA or HubSpot?|69c25142e33711894580d0a2, Which flow path is most popular?|69c25142e33711894580d0a8, Export performance data?|69c25142e33711894580d0ab, Does ReelFlow help with SEO?|69c25142e33711894580d0ae\nC7: Engage anonymous visitors?|69c25142e33711894580d0b1, Best page to start with?|69c25142e33711894580d0b4, Support lead generation?|69c25142e33711894580d0b7, Humanise a B2B brand?|69c25142e33711894580d0ba, Work alongside chatbot?|69c25142e33711894580d0bd, Slow down my website?|69c25142e33711894580d0c0\nC8: Integrate with CRM?|69c25142e33711894580d0c3, What is the Player API?|69c25142e33711894580d0c6, Developer needed for integrations?|69c25142e33711894580d0c9, GDPR compliant?|69c25142e33711894580d0cf\nC9: AI scripting assistance?|69c25142e33711894580d0d5, AI suggest where to use video?|69c25142e33711894580d0d8, AI write in brand voice?|69c25142e33711894580d0db\nC10: Good for event companies?|69c24e2b31c335acb6a53fe8, Increase sponsorship revenue?|69c24e2b31c335acb6a53fe2, Sell sponsorship packages?|69c24e2b31c335acb6a53ff1, Increase event ticket sales?|69c24e2b31c335acb6a53feb, Reduce event no-shows?|69c24e2b31c335acb6a53fee, Multiple audience types?|69c24e2b31c335acb6a53ff4\nC11: Visitors leaving without action?|69c2519d0e940f62c6c6aabd, Traffic but no leads?|69c2519d0e940f62c6c6aac0, Turn visitors into demo bookings?|69c2519d0e940f62c6c6aac3, Homepage bounce rate high?|69c2519d0e940f62c6c6aac6, Improve B2B website conversion?|69c2519d0e940f62c6c6aac9, Engage visitors who wont fill forms?|69c2519d0e940f62c6c6aacc, Reach anonymous buyers?|69c2519d0e940f62c6c6aacf, Influence buying decision before contact?|69c2519d0e940f62c6c6aad2, Connect with buying group?|69c2519d0e940f62c6c6aad5, Make website feel more human?|69c2519d0e940f62c6c6aad8, Build trust before sales call?|69c2519d0e940f62c6c6aadb, Show people behind business?|69c2519d0e940f62c6c6aade, Add video without big budget?|69c2519d0e940f62c6c6aae4, Keep video up to date?|69c2519d0e940f62c6c6aae7, Add video without developer?|69c2519d0e940f62c6c6aaea, Easiest way to create short videos?|69c2519d0e940f62c6c6aaed, Prove website contributing to pipeline?|69c2519d0e940f62c6c6aaf0, Measure engagement beyond page views?|69c2519d0e940f62c6c6aaf3, Track content influencing buyer decisions?|69c2519d0e940f62c6c6aaf6, Prospects better informed before sales calls?|69c2519d0e940f62c6c6aafc';
-
-  const pipelinePrompt = 'You are generating a complete product marketing page for ReelFlow — an interactive short-form video platform for B2B websites.\n\nInput mode: ' + (ctx.mode === 'problem' ? 'Problem-led\nProblem statement: ' + ctx.content : 'Feature-led\nFeature description: ' + ctx.content) + '\n\nChosen angle — Title: ' + selectedIdea.title + ' | Keyword: ' + selectedIdea.keyword + ' | Rationale: ' + selectedIdea.rationale + '\nProposed hero header (use this as the starting point for hero_header, refine through style and SEO passes): ' + (selectedIdea.heroHeader || '') + '\n\nExecute all steps silently and return ONLY the final JSON object. No explanations. No markdown. No code fences.\n\nSTEP 1 — Write copy:\nhero_header: Solution-framed H1 containing the keyword. Rephrase as solution — NOT a verbatim repeat of the query.\nhero_subheader: 1-2 sentences. Acknowledge the problem first, then introduce interactive video as the mechanism that solves it.\nintro_label_text: 2-4 words e.g. "The problem"\nintro_title: H2 expanding the buyer problem. Must differ from hero.\nintro_subtitle: 2-3 sentences. Position ReelFlow as practical answer. No jargon.\nsteps_title: Fresh title for the 4-step ReelFlow process relevant to this page.\ncta_title: Short, punchy, action-oriented.\ncta_subtitle: 1-2 sentences, benefit-led, ends with reassurance e.g. "no rebuild required"\ncta_primary_button_text: e.g. "Start for free"\nsection_faqs_title: Short question-led heading\nname: Raw Google search string. Natural, lowercase.\nslug: lowercase, hyphen-separated, includes keyword\nseo_title: Keyword at start, under 60 chars, ends with | ReelFlow\nseo_meta_description: 120-155 chars, keyword once, no jargon\n\nSTEP 2 — Style pass (silent): Warm but measured, no enthusiasm, no jargon. Value first benefit second. En dashes with spaces. No banned words: revolutionary, game-changing, seamless, leverage, utilize, robust, scalable, cutting-edge, innovative, streamline.\n\nSTEP 3 — SEO pass (silent): Keyword in hero_header, hero_subheader, intro_title, intro_subtitle naturally.\n\nSTEP 4 — Select 3 feature blocks (4 if broad topic):\nRules: max 1 per cluster, min 2 clusters, always 1 Universal block, all different Image# values.\nBlocks (Name|ID|Image#): ' + BLOCKS + '\n\nSTEP 5 — Select hero image:\nHero Image# must NOT match any Image# used by the selected feature blocks. Use exact CDN URL.\nImages (Image#|URL): ' + IMAGES + '\n\nSTEP 6 — Select 3-5 FAQs:\nRules: prioritise C11, include at least 1 from C1-C9, max 2 per cluster.\nFAQs (Name|ID): ' + FAQS + '\n\nSTEP 7 — Return this exact JSON with all values. Replace {slug} in both CTA links with the actual slug. IMPORTANT: feature_blocks and faqs must be plain arrays of ID strings only — no objects, no extra properties, just the IDs. secondary_cta_text and secondary_cta_link must always be empty strings — never populate them:\n{"name":"","slug":"","hero_layout":"Left text, right media","hero_header":"","hero_subheader":"","header_media_type":"Image","hero_image_url":"","primary_cta_text":"","primary_cta_link":"https://app.reelflow.com/signup?utm_source=features&utm_medium={slug}","secondary_cta_text":"","secondary_cta_link":"","intro_label_text":"","intro_title":"","intro_subtitle":"","feature_blocks":[],"steps_title":"","steps_items":["69bcfa9ca1b5919c57f1937f","69bcfb02526dd4b174a57952","69bcfb1ca72becc4bf10b13b","69bcfb766afd599d603ebdc7"],"section_faqs_title":"","faqs":[],"cta_title":"","cta_subtitle":"","cta_primary_button_text":"","cta_primary_button_link":"https://www.reelflow.com/product?utm_source=features&utm_medium={slug}","cta_secondary_button_text":"","cta_secondary_button_link":"","seo_title":"","seo_meta_description":""}';
-
-  const steps = ['copy', 'style', 'blocks', 'image', 'faqs', 'push'];
-
-  async function animateSteps(totalMs) {
-    const delays = [totalMs * 0.2, totalMs * 0.15, totalMs * 0.15, totalMs * 0.1, totalMs * 0.1];
-    for (let i = 0; i < delays.length; i++) {
-      await new Promise(r => setTimeout(r, delays[i]));
-      dot(steps[i], 'done');
-      if (steps[i + 1]) dot(steps[i + 1], 'active');
-    }
-  }
-
   try {
+    // Step 1 — Load all data files
+    dot('context', 'active');
+    const data = await loadAllData();
+    dot('context', 'done');
+
+    // Step 2 — Copy writing
     dot('copy', 'active');
+    const copy = await generateCopy(data, ctx);
+    dot('copy', 'done');
 
-    const [raw] = await Promise.all([
-      callClaude(pipelinePrompt, 'Return only a single valid JSON object. No markdown. No code fences. No explanation.', 4000),
-      animateSteps(25000)
-    ]);
+    // Step 3 — Asset selection
+    dot('assets', 'active');
+    const assets = await selectAssets(data, copy, ctx);
+    dot('assets', 'done');
 
-    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    const slug = parsed.slug || '';
-    parsed.primary_cta_link = (parsed.primary_cta_link || '').replace('{slug}', slug);
-    parsed.cta_primary_button_link = (parsed.cta_primary_button_link || '').replace('{slug}', slug);
-
+    // Step 4 — Push to Webflow
     dot('push', 'active');
 
+    const slug = copy.slug || '';
     const fieldData = {
-      name: parsed.name, slug: parsed.slug,
-      'hero-layout': parsed.hero_layout, 'hero-header': parsed.hero_header,
-      'hero-subheader': parsed.hero_subheader, 'header-media-type': parsed.header_media_type,
-      'primary-cta-text': parsed.primary_cta_text, 'primary-cta-link': parsed.primary_cta_link,
-      'secondary-cta-text': '', 'secondary-cta-link': '',
-      'intro-label-text': parsed.intro_label_text, 'intro-title': parsed.intro_title,
-      'intro-subtitle': parsed.intro_subtitle, 'feature-blocks': parsed.feature_blocks,
-      'steps-title': parsed.steps_title, 'steps-items': parsed.steps_items,
-      'section-faqs-title': parsed.section_faqs_title, 'faqs': parsed.faqs,
-      'cta-title': parsed.cta_title, 'cta-subtitle': parsed.cta_subtitle,
-      'cta-primary-button-text': parsed.cta_primary_button_text, 'cta-primary-button-link': parsed.cta_primary_button_link,
-      'cta-secondary-button-text': parsed.cta_secondary_button_text || '', 'cta-secondary-button-link': parsed.cta_secondary_button_link || '',
-      'seo-title': parsed.seo_title, 'seo-meta-description': parsed.seo_meta_description
+      // Identity
+      name: copy.name,
+      slug: copy.slug,
+
+      // Hero (fixed structural fields + generated copy)
+      'hero-layout': 'Left text, right media',
+      'header-media-type': 'Image',
+      'hero-header': copy.hero_header,
+      'hero-subheader': copy.hero_subheader,
+      'hero-image': assets.hero_image_url ? { url: assets.hero_image_url } : undefined,
+
+      // Hero CTA — primary populated, secondary always empty
+      'primary-cta-text': copy.cta_primary_button_text,
+      'primary-cta-link': 'https://app.reelflow.com/signup?utm_source=features&utm_medium=' + slug,
+      'secondary-cta-text': '',
+      'secondary-cta-link': '',
+
+      // Intro section
+      'intro-label-text': copy.intro_label_text,
+      'intro-title': copy.intro_title,
+      'intro-subtitle': copy.intro_subtitle,
+
+      // Feature blocks
+      'feature-blocks': assets.feature_blocks,
+
+      // Steps section — title generated, items always fixed in this order
+      'steps-title': copy.steps_title,
+      'steps-items': [
+        '69bcfa9ca1b5919c57f1937f', // Record your training video
+        '69bcfb02526dd4b174a57952', // Create your audio
+        '69bcfb1ca72becc4bf10b13b', // Generate your video
+        '69bcfb766afd599d603ebdc7'  // Launch on your website
+      ],
+
+      // FAQs
+      'section-faqs-title': copy.section_faqs_title,
+      'faqs': assets.faqs,
+
+      // Bottom CTA section — primary populated, secondary always empty
+      'cta-title': copy.cta_title,
+      'cta-subtitle': copy.cta_subtitle,
+      'cta-primary-button-text': copy.cta_primary_button_text,
+      'cta-primary-button-link': 'https://www.reelflow.com/product?utm_source=features&utm_medium=' + slug,
+      'cta-secondary-button-text': '',
+      'cta-secondary-button-link': '',
+
+      // SEO
+      'seo-title': copy.seo_title,
+      'seo-meta-description': copy.seo_meta_description
     };
 
-    if (parsed.hero_image_url) fieldData['hero-image'] = { url: parsed.hero_image_url };
+    // Strip undefined hero-image if no image was selected (shouldn't happen, but defensive)
+    if (!fieldData['hero-image']) delete fieldData['hero-image'];
 
     const pushRes = await fetch('/.netlify/functions/push-to-webflow', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fieldData })
     });
 
@@ -271,21 +481,26 @@ async function runPipeline() {
 
     dot('push', 'done');
 
-    const heroImg = parsed.hero_image_url ? parsed.hero_image_url.split('/').pop().replace(/%20/g, ' ') : 'not set';
+    const heroImg = assets.hero_image_url ? assets.hero_image_url.split('/').pop().replace(/%20/g, ' ') : 'not set';
 
     document.getElementById('done-summary').innerHTML = [
-      ['Page', parsed.name], ['Slug', '/features/' + parsed.slug],
-      ['Hero', parsed.hero_header], ['Hero image', heroImg],
-      ['Feature blocks', Array.isArray(parsed.feature_blocks) ? parsed.feature_blocks.length + ' selected' : '—'],
-      ['FAQs', Array.isArray(parsed.faqs) ? parsed.faqs.length + ' selected' : '—'],
-      ['SEO title', parsed.seo_title],
-      ['Live URL', '<a href="https://www.reelflow.com/features/' + parsed.slug + '" target="_blank">reelflow.com/features/' + parsed.slug + '</a>']
+      ['Page', copy.name],
+      ['Slug', '/features/' + copy.slug],
+      ['Hero', copy.hero_header],
+      ['Hero image', heroImg],
+      ['Feature blocks', Array.isArray(assets.feature_blocks) ? assets.feature_blocks.length + ' selected' : '—'],
+      ['FAQs', Array.isArray(assets.faqs) ? assets.faqs.length + ' selected' : '—'],
+      ['SEO title', copy.seo_title],
+      ['Live URL', '<a href="https://www.reelflow.com/features/' + copy.slug + '" target="_blank">reelflow.com/features/' + copy.slug + '</a>']
     ].map(function(r) { return '<div class="summary-row"><span class="summary-label">' + r[0] + '</span><span class="summary-value">' + r[1] + '</span></div>'; }).join('');
 
     show('screen-done');
 
   } catch (e) {
-    dot('push', '');
+    ['context', 'copy', 'assets', 'push'].forEach(id => {
+      const el = document.getElementById('d-' + id);
+      if (el && el.className.indexOf('active') !== -1) el.className = 'dot';
+    });
     const errBox = document.getElementById('running-error');
     errBox.style.display = 'block';
     errBox.textContent = 'Error: ' + e.message;
@@ -293,11 +508,12 @@ async function runPipeline() {
 }
 
 function startOver() {
-  selectedIdea = null; ideas = [];
+  selectedIdea = null;
+  ideas = [];
   document.getElementById('problem-input').value = '';
   document.getElementById('feature-input').value = '';
   document.getElementById('btn-run').disabled = true;
-  ['copy', 'style', 'blocks', 'image', 'faqs', 'push'].forEach(function(id) { dot(id, ''); });
+  ['context', 'copy', 'assets', 'push'].forEach(function(id) { dot(id, ''); });
   setMode('problem');
   show('screen-input');
 }
